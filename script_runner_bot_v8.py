@@ -710,6 +710,11 @@ async def start_run(
     else:
         cmd = [str(entry_path), *args]
 
+    if entry_path.suffix.lower() != ".py" and not os.access(entry_path, os.X_OK):
+        raise FileNotFoundError(
+            f"Entry существует, но не является исполняемым: {entry_path}. Сделайте chmod +x или укажите Python-скрипт."
+        )
+
     env = os.environ.copy()
     env.update(script.env or {})
 
@@ -722,7 +727,9 @@ async def start_run(
             env=env,
         )
     except FileNotFoundError as e:
-        raise FileNotFoundError(f"Не удалось запустить entry: {cmd[0]} ({e})")
+        raise FileNotFoundError(
+            f"Не удалось запустить entry: {cmd[0]} (cwd={script.work_dir}). Возможно, файл удалён или не смонтирован. Оригинальная ошибка: {e}"
+        )
 
     run_id = new_run_id()
     lp = run_log_path(script_name, run_id)
