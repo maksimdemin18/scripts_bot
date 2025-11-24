@@ -1,0 +1,77 @@
+version: 1
+
+env: {}
+artifacts:
+  - "{out_dir}/*.json"
+  - "{out_dir}/*.csv"
+  - "{out_dir}/*.log"
+
+presets:
+  json:
+    description: "Пинг списка хостов в JSON → out/result.json"
+    entry: "bin/ping_v3.py"
+    args:
+      - "{file}"
+      - "-c"
+      - "{count}"
+      - "-w"
+      - "{timeout}"
+      - "-j"
+      - "{jobs}"
+      - "--only-up?{only_up}"
+      - "--sort"
+      - "{sort}"
+      - "--desc?{desc}"
+      - "--format"
+      - "{format}"
+      - "--pretty?{pretty}"
+      - "--out"
+      - "{out}"
+    defaults:
+      file: "{config_dir}/hosts.txt"
+      count: 10
+      timeout: 1000
+      jobs: 8
+      format: "json"
+      only_up: false
+      sort: "host"
+      desc: false
+      pretty: true
+      out: "{out_dir}/result.json"
+    required: ["file"]
+    artifacts:
+      - "{out}"
+
+  table:
+    description: "Пинг в табличном виде → out/result.log"
+    entry: "bin/ping_v3.py"
+    args:
+      - "{file}"
+      - "-c"
+      - "{count}"
+      - "-w"
+      - "{timeout}"
+      - "-j"
+      - "{jobs}"
+      - "--only-up?{only_up}"
+      - "--sort"
+      - "{sort}"
+      - "--desc?{desc}"
+      - "--format"
+      - "{format}"
+      - "--out"
+      - "{out}"
+    defaults:
+      file: "{config_dir}/hosts.txt"
+      count: 5
+      timeout: 1000
+      jobs: 8
+      format: "table"
+      only_up: false
+      sort: "host"
+      desc: false
+      pretty: false
+      out: "{out_dir}/result.log"
+    required: ["file"]
+    artifacts:
+      - "{out}"
