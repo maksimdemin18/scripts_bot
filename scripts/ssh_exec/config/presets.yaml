@@ -1,0 +1,23 @@
+version: 1
+
+env: {}
+artifacts:
+  - "{out_dir}/*"
+
+presets:
+  default:
+    description: "Выполнить команды по списку хостов"
+    entry: "bin/entry.sh"
+    args:
+      - "--hosts"
+      - "{hosts}"
+      - "--cmd-file"
+      - "{cmds}"
+      - "--out-dir"
+      - "{out_dir}"
+    defaults:
+      hosts: "{config_dir}/hosts.txt"
+      cmds: "{config_dir}/commands.txt"
+    required: ["hosts", "cmds"]
+    artifacts:
+      - "{out_dir}/*"
