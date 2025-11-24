@@ -1,0 +1,23 @@
+version: 1
+
+env: {}
+artifacts:
+  - "{out_dir}/*.log"
+  - "{out_dir}/*.txt"
+  - "{out_dir}/*.json"
+
+presets:
+  default:
+    description: "Сбор логов по config.yaml → out/logs.json"
+    entry: "bin/fetch_logs_v3.py"
+    args:
+      - "--config"
+      - "{config}"
+      - "--out"
+      - "{out}"
+    defaults:
+      config: "{config_dir}/config.yaml"
+      out: "{out_dir}/logs.json"
+    required: ["config"]
+    artifacts:
+      - "{out}"
