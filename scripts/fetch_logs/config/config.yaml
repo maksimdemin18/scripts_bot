@@ -1,0 +1,6 @@
+# scripts/fetch_logs/config/config.yaml
+targets:
+  - host: 192.168.0.10
+    service: app1
+  - host: 192.168.0.11
+    service: app2
