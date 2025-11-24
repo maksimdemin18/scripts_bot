@@ -42,6 +42,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # -----------------------------------------------------------------------------
 APP_DIR = Path(__file__).parent.resolve()
 DEFAULT_CONFIG_PATH = APP_DIR / "bot.yaml"
+SCRIPTS_ROOT = APP_DIR / "scripts"
 
 # -----------------------------------------------------------------------------
 # Настройки из .env
@@ -56,6 +57,7 @@ class AppSettings(BaseSettings):
     bot_token: str = Field(alias="BOT_TOKEN")
     bot_config: Path = Field(default=DEFAULT_CONFIG_PATH, alias="BOT_CONFIG")
     logs_dir: Optional[Path] = Field(default=None, alias="LOGS_DIR")
+    scripts_dir: Path = Field(default=SCRIPTS_ROOT, alias="SCRIPTS_DIR")
     run_timeout: int = Field(default=600, alias="RUN_TIMEOUT")
     max_upload_mb: int = Field(default=45, alias="MAX_UPLOAD_MB")
 
@@ -80,10 +82,17 @@ class AppSettings(BaseSettings):
         p = Path(v)
         return p if p.is_absolute() else (APP_DIR / p).resolve()
 
+    @field_validator("scripts_dir", mode="before")
+    @classmethod
+    def _resolve_scripts_dir(cls, v: Any) -> Path:
+        p = Path(v) if v else SCRIPTS_ROOT
+        return p if p.is_absolute() else (APP_DIR / p).resolve()
+
     def finalize(self) -> None:
         if self.logs_dir is None:
             object.__setattr__(self, "logs_dir", (APP_DIR / "logs").resolve())
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.scripts_dir.mkdir(parents=True, exist_ok=True)
 
     # парсинг списков
     @property
@@ -129,6 +138,7 @@ SET.finalize()
 BOT_TOKEN = SET.bot_token
 BOT_CONFIG_PATH = SET.bot_config
 LOGS_DIR = SET.logs_dir
+SCRIPTS_DIR = SET.scripts_dir
 RUN_TIMEOUT = SET.run_timeout
 MAX_UPLOAD_MB = SET.max_upload_mb
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -281,6 +291,19 @@ class RunInfo:
 
 RUNS: Dict[str, RunInfo] = {}
 
+
+def resolve_run_for_user(token: str | None, user_id: int) -> Optional[RunInfo]:
+    if not token or token == "latest":
+        candidates = [r for r in RUNS.values() if r.user_id == user_id]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda r: r.started_at, reverse=True)
+        return candidates[0]
+    ri = RUNS.get(token)
+    if ri:
+        return ri
+    return None
+
 # -----------------------------------------------------------------------------
 # Загрузка конфигов и пресетов
 # -----------------------------------------------------------------------------
@@ -306,20 +329,46 @@ def load_presets_for_all_scripts() -> None:
     for _name, spec in SCRIPTS.items():
         load_script_presets(spec)
 
+def discover_scripts_from_dir(base_dir: Path) -> Dict[str, ScriptSpec]:
+    found: Dict[str, ScriptSpec] = {}
+    if not base_dir.exists():
+        log.info("Scripts dir not found, skipping auto-discovery: %s", base_dir)
+        return found
+    for cfg_path in sorted(base_dir.glob("*/script.yaml")):
+        name = cfg_path.parent.name
+        try:
+            data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            data.setdefault("root_dir", str(cfg_path.parent))
+            spec = ScriptSpec.model_validate(data)
+            spec.finalize_paths()
+            found[name] = spec
+            log.info("Discovered script '%s' from %s", name, cfg_path)
+        except Exception:
+            log.exception("Failed to load script config %s", cfg_path)
+    return found
+
 def load_bot_config() -> None:
     global SCRIPTS
     if not BOT_CONFIG_PATH.exists():
         log.warning("Config not found: %s", BOT_CONFIG_PATH)
-        SCRIPTS = {}
+        SCRIPTS = discover_scripts_from_dir(SCRIPTS_DIR)
         return
     try:
         raw = yaml.safe_load(BOT_CONFIG_PATH.read_text(encoding="utf-8")) or {}
         cfg = BotConfig.model_validate(raw)
         for spec in cfg.scripts.values():
             spec.finalize_paths()
-        SCRIPTS = cfg.scripts
+        config_scripts = cfg.scripts
+        discovered = discover_scripts_from_dir(SCRIPTS_DIR)
+        SCRIPTS = {**discovered, **config_scripts}
         load_presets_for_all_scripts()
-        log.info("Loaded %d scripts from %s", len(SCRIPTS), BOT_CONFIG_PATH)
+        log.info(
+            "Loaded %d scripts (config=%d, discovered=%d) from %s",
+            len(SCRIPTS),
+            len(config_scripts),
+            len(discovered),
+            BOT_CONFIG_PATH,
+        )
     except Exception as e:
         log.exception("Failed to load bot config: %s", e)
         SCRIPTS = {}
@@ -880,6 +929,7 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
             "<b>/artifacts</b> [run_id|latest] — отослать артефакты\n"
             "<b>/ctx</b> [script] [in|config|out] — контекст для загрузки файлов\n"
             "<b>/cfg</b> [path|get|reload|example] — работа с конфигом\n\n"
+            "Скрипты можно описывать в bot.yaml или как scripts/<name>/script.yaml (автопоиск).\n"
             "Пришлите файл — он сохранится в каталог, заданный командой /ctx.\n"
             + ("Доступ ограничен владельцами." if OWNER_IDS else "")
         )
@@ -1076,16 +1126,9 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
                 n_lines = int(tok)
             else:
                 run_id = tok
-        if not run_id or run_id == "latest":
-            candidates = [r for r in RUNS.values() if r.user_id == m.from_user.id]
-            if not candidates:
-                return await m.answer("Запусков пока не было.")
-            candidates.sort(key=lambda r: r.started_at, reverse=True)
-            ri = candidates[0]
-        else:
-            ri = RUNS.get(run_id)
-            if not ri:
-                return await m.answer("run_id не найден.")
+        ri = resolve_run_for_user(run_id, m.from_user.id)
+        if not ri:
+            return await m.answer("Запусков пока не было или run_id не найден.")
         if force_file:
             return await m.answer_document(FSInputFile(str(ri.log_path)), caption=f"run_id={ri.run_id}")
         text = tail_file(ri.log_path, lines=n_lines)
@@ -1104,16 +1147,9 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
         if not is_authorized(m.from_user.id):
             return await m.answer("⛔ Нет доступа.")
         run_id = (command.args or "").strip() or "latest"
-        if run_id == "latest":
-            candidates = [r for r in RUNS.values() if r.user_id == m.from_user.id]
-            if not candidates:
-                return await m.answer("Запусков пока не было.")
-            candidates.sort(key=lambda r: r.started_at, reverse=True)
-            ri = candidates[0]
-        else:
-            ri = RUNS.get(run_id)
-            if not ri:
-                return await m.answer("run_id не найден.")
+        ri = resolve_run_for_user(run_id, m.from_user.id)
+        if not ri:
+            return await m.answer("Запусков пока не было или run_id не найден.")
         await safe_send_file(m.chat.id, ri.log_path, caption=f"log run_id={ri.run_id}")
 
     @dp.message(Command("artifacts"))
@@ -1121,16 +1157,9 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
         if not is_authorized(m.from_user.id):
             return await m.answer("⛔ Нет доступа.")
         arg = (command.args or "").strip() or "latest"
-        if arg == "latest":
-            candidates = [r for r in RUNS.values() if r.user_id == m.from_user.id]
-            if not candidates:
-                return await m.answer("Запусков пока не было.")
-            candidates.sort(key=lambda r: r.started_at, reverse=True)
-            ri = candidates[0]
-        else:
-            ri = RUNS.get(arg)
-            if not ri:
-                return await m.answer("run_id не найден.")
+        ri = resolve_run_for_user(arg, m.from_user.id)
+        if not ri:
+            return await m.answer("Запусков пока не было или run_id не найден.")
         if not ri.artifacts:
             await m.answer("Артефактов в реестре нет — попробую подтянуть по шаблонам скрипта…")
             vals = values_with_paths(ri.script, {})
