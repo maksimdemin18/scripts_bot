@@ -1,0 +1,22 @@
+version: 1
+
+env: {}
+artifacts:
+  - "{out_dir}/*.json"
+  - "{out_dir}/*.csv"
+
+presets:
+  default:
+    description: "Скан инвентори → out/inventory.json"
+    entry: "bin/scan_inventory.py"
+    args:
+      - "--input"
+      - "{input}"
+      - "--out"
+      - "{out}"
+    defaults:
+      input: "{in_dir}/hosts.txt"
+      out: "{out_dir}/inventory.json"
+    required: ["input"]
+    artifacts:
+      - "{out}"
