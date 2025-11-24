@@ -713,13 +713,16 @@ async def start_run(
     env = os.environ.copy()
     env.update(script.env or {})
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        cwd=str(script.work_dir),
-        env=env,
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=str(script.work_dir),
+            env=env,
+        )
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Не удалось запустить entry: {cmd[0]} ({e})")
 
     run_id = new_run_id()
     lp = run_log_path(script_name, run_id)
@@ -915,7 +918,11 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
 
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    token = BOT_TOKEN.strip()
+    if " " in token:
+        raise RuntimeError("BOT_TOKEN содержит пробелы. Проверьте переменные окружения.")
+
+    bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     _BOT = bot
     dp = Dispatcher()
 
