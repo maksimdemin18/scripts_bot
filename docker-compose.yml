@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  tg-scripts-bot:
+    build: .
+    container_name: tg-scripts-bot
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      - ./bot.yaml:/app/bot.yaml:ro
+      - ./scripts:/app/scripts:rw
+      - ./logs:/app/logs:rw
