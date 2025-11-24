@@ -1,0 +1,5 @@
+aiogram>=3.3,<4.0
+pydantic>=2.4,<3.0
+pydantic-settings>=2.2,<3.0
+PyYAML>=6.0,<7.0
+uvloop>=0.19; sys_platform != "win32"
