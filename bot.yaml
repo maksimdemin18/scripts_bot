@@ -1,0 +1,60 @@
+version: 1
+
+scripts:
+  ping:
+    description: "Пинг по списку хостов"
+    root_dir: scripts/ping
+    entry: bin/ping_v3.py
+    work_dir: "."          # cwd = scripts/ping
+    in_dir: in
+    config_dir: config
+    out_dir: out
+    env: {}
+    artifacts: []          #presets.yaml
+    presets_file: config/presets.yaml
+
+  fetch_logs:
+    description: "Сбор логов"
+    root_dir: scripts/fetch_logs
+    entry: bin/fetch_logs_v3.py
+    work_dir: "."          # cwd = scripts/fetch_logs
+    in_dir: in
+    config_dir: config
+    out_dir: out
+    env: {}
+    artifacts:
+      - "{out_dir}/*.log"
+      - "{out_dir}/*.txt"
+      - "{out_dir}/*.json"
+    presets_file: config/presets.yaml
+
+  scan_inventory:
+    description: "Инвентори хостов для Ansible"
+    root_dir: scripts/scan_inventory
+    entry: bin/scan_inventory.py
+    work_dir: "."
+    in_dir: in
+    config_dir: config
+    out_dir: out
+    env: {}
+    artifacts:
+      - "{out_dir}/*.log"
+      - "{out_dir}/*.json"
+      - "{out_dir}/*.csv"
+      - "{out_dir}/**/*.log"
+      - "{out_dir}/**/*.json"
+      - "{out_dir}/**/*.csv"
+    presets_file: config/presets.yaml
+
+  ssh_exec:
+    description: "SSH: выполнить команды на списке хостов"
+    root_dir: scripts/ssh_exec
+    entry: bin/entry.sh
+    work_dir: "."
+    in_dir: in
+    config_dir: config
+    out_dir: out
+    env: {}
+    artifacts:
+      - "{out_dir}/*"
+    presets_file: config/presets.yaml
