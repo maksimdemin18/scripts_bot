@@ -698,6 +698,13 @@ async def start_run(
     chat_id: int,
     extra_artifacts: Optional[List[Path]] = None,
 ) -> RunInfo:
+    if not script.work_dir.exists():
+        raise FileNotFoundError(f"Рабочая директория не найдена: {script.work_dir}")
+    if not entry_path.exists():
+        raise FileNotFoundError(f"Entry-файл не найден: {entry_path}")
+    if not entry_path.is_file():
+        raise FileNotFoundError(f"Entry не является файлом: {entry_path}")
+
     if entry_path.suffix.lower() == ".py":
         cmd = [sys.executable, str(entry_path), *args]
     else:
@@ -1021,7 +1028,19 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
         final_args = auto_pathify_args(spec, final_args)
 
         preset_arts = resolve_artifacts(pr.artifacts or [], values, spec.out_dir)
-        ri = await start_run(script_name, spec, entry_path, final_args, m.from_user.id, m.chat.id, extra_artifacts=preset_arts)
+        try:
+            ri = await start_run(
+                script_name,
+                spec,
+                entry_path,
+                final_args,
+                m.from_user.id,
+                m.chat.id,
+                extra_artifacts=preset_arts,
+            )
+        except FileNotFoundError as e:
+            log.error("Failed to start preset '%s/%s': %s", script_name, preset_name, e)
+            return await m.answer(f"Не удалось запустить: {html.escape(str(e))}")
         await m.answer(
             (
                 "▶️ <b>Запуск пресета</b> <code>{}</code> / <code>{}</code>\n"
@@ -1071,7 +1090,11 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
         script_args = auto_pathify_args(spec, script_args)
 
         entry_path = spec.resolve_entry_path(None)
-        ri = await start_run(script_name, spec, entry_path, script_args, m.from_user.id, m.chat.id)
+        try:
+            ri = await start_run(script_name, spec, entry_path, script_args, m.from_user.id, m.chat.id)
+        except FileNotFoundError as e:
+            log.error("Failed to start run '%s': %s", script_name, e)
+            return await m.answer(f"Не удалось запустить: {html.escape(str(e))}")
         await m.answer(
             (
                 "▶️ <b>Запуск</b>: <code>{}</code>\n"
@@ -1260,7 +1283,19 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
             script_args = expand_placeholders_in_args(script_args, run_values)
             script_args = auto_pathify_args(spec, script_args)
             entry_path = spec.resolve_entry_path(None)
-            ri = await start_run(script_name, spec, entry_path, script_args, cq.from_user.id, cq.message.chat.id)
+            try:
+                ri = await start_run(
+                    script_name,
+                    spec,
+                    entry_path,
+                    script_args,
+                    cq.from_user.id,
+                    cq.message.chat.id,
+                )
+            except FileNotFoundError as e:
+                log.error("Failed to start run '%s' from keyboard: %s", script_name, e)
+                await cq.answer(f"Не удалось запустить: {e}", show_alert=True)
+                return
             await cq.message.answer(
                 f"▶️ <b>Запуск (избранное)</b>: <code>{html.escape(script_name)}</code>\n"
                 f"Аргументы: <code>{html.escape(shlex.join(script_args))}</code>\n"
@@ -1291,7 +1326,20 @@ async def make_bot() -> Tuple[Bot, Dispatcher]:
             final_args = expand_placeholders_in_args(final_args, values)
             final_args = auto_pathify_args(spec, final_args)
             preset_arts = resolve_artifacts(pr.artifacts or [], values, spec.out_dir)
-            ri = await start_run(script_name, spec, entry_path, final_args, cq.from_user.id, cq.message.chat.id, extra_artifacts=preset_arts)
+            try:
+                ri = await start_run(
+                    script_name,
+                    spec,
+                    entry_path,
+                    final_args,
+                    cq.from_user.id,
+                    cq.message.chat.id,
+                    extra_artifacts=preset_arts,
+                )
+            except FileNotFoundError as e:
+                log.error("Failed to start preset '%s/%s' from keyboard: %s", script_name, preset_name, e)
+                await cq.answer(f"Не удалось запустить: {e}", show_alert=True)
+                return
             await cq.message.answer(
                 f"▶️ <b>Запуск пресета (избранное)</b>: <code>{html.escape(script_name)}/{html.escape(preset_name)}</code>\n"
                 f"Аргументы: <code>{html.escape(shlex.join(final_args))}</code>\n"
